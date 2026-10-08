@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Muffin Boy: New York City, 1888 — 3D Delivery Route</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #15110d; color: #f4ebd9;
+    font-family: "Georgia", "Times New Roman", serif;
+  }
+  #game-container {
+    position: relative; width: 100vw; height: 100vh; overflow: hidden;
+  }
+  canvas#world-canvas {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block;
+  }
+  canvas#tray-canvas {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;
+  }
+
+  /* HUD Layer */
+  .hud-layer {
+    position: absolute; inset: 0; pointer-events: none; z-index: 20;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+
+  /* Top Bar & Compass Tape */
+  .top-hud {
+    display: flex; flex-direction: column; align-items: center; padding: 12px 20px 0;
+    background: linear-gradient(to bottom, rgba(16,12,8,0.88) 0%, rgba(16,12,8,0.45) 70%, transparent 100%);
+  }
+  .compass-wrap {
+    position: relative; width: min(560px, 86vw); height: 46px;
+    background: rgba(28, 21, 14, 0.92);
+    border: 2px solid #b58d57; border-radius: 8px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.7), inset 0 1px 3px rgba(255,215,140,0.25);
+    overflow: hidden;
+  }
+  .compass-tape {
+    position: absolute; top: 0; height: 100%; display: flex; align-items: center;
+    font-family: "Courier New", monospace; font-size: 11px; font-weight: bold;
+    color: #dfcaa7; letter-spacing: 2px; white-space: nowrap;
+    transition: transform 0.04s linear;
+  }
+  .compass-center-line {
+    position: absolute; left: 50%; top: 0; bottom: 0; width: 2px;
+    background: #ffcc00; transform: translateX(-50%); box-shadow: 0 0 6px #ffcc00;
+  }
+  .compass-waypoint-marker {
+    position: absolute; top: 4px; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center;
+    color: #ffd700; font-size: 13px; font-weight: bold; text-shadow: 0 0 8px #ff9900;
+    transition: left 0.05s ease-out;
+  }
+  .compass-waypoint-marker .diamond {
+    font-size: 17px; line-height: 1; filter: drop-shadow(0 0 5px #ffaa00);
+  }
+  .waypoint-subtext {
+    margin-top: 6px; font-size: 13px; color: #ecd8b9; letter-spacing: 1px;
+    text-transform: uppercase; font-weight: bold; text-shadow: 1px 1px 3px #000;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .waypoint-subtext span.badge {
+    background: #8b2b1a; color: #fff8eb; padding: 2px 8px; border-radius: 4px;
+    border: 1px solid #d46b52; font-size: 11px;
+  }
+
+  /* Status Cards (Top Left & Top Right) */
+  .status-row {
+    position: absolute; top: 16px; left: 16px; right: 16px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+  }
+  .status-card {
+    background: rgba(26, 19, 13, 0.92);
+    border: 2px solid #a87e49; border-radius: 8px;
+    padding: 10px 16px; box-shadow: 0 6px 18px rgba(0,0,0,0.7);
+    display: flex; flex-direction: column; gap: 4px; min-width: 210px;
+  }
+  .card-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: #c9ab7b; border-bottom: 1px solid #574128; padding-bottom: 3px;
+  }
+  .card-value-large {
+    font-size: 24px; font-weight: bold; color: #fff3dc; display: flex; align-items: baseline; gap: 6px;
+  }
+  .card-sub {
+    font-size: 12px; color: #b7a080;
+  }
+  .pay-highlight {
+    color: #72db6e; font-weight: bold;
+  }
+
+  /* Stability Gauge (Right Side) */
+  .stability-card {
+    min-width: 260px;
+  }
+  .gauge-track {
+    width: 100%; height: 16px; background: #261d15;
+    border: 2px solid #6b5030; border-radius: 8px; overflow: hidden;
+    margin: 4px 0; position: relative;
+  }
+  .gauge-fill {
+    height: 100%; width: 100%; background: linear-gradient(to right, #e74c3c, #f39c12 50%, #2ecc71);
+    transition: width 0.15s ease-out;
+  }
+  .gauge-marker {
+    position: absolute; top: 0; bottom: 0; left: 60%; width: 2px;
+    background: rgba(255,255,255,0.7); box-shadow: 0 0 3px #fff;
+  }
+  .grip-keys {
+    display: flex; gap: 8px; margin-top: 4px; pointer-events: auto;
+  }
+  .key-pill {
+    flex: 1; padding: 5px 6px; border-radius: 5px; font-size: 11px;
+    text-align: center; font-weight: bold; letter-spacing: 0.5px;
+    background: #38291b; border: 1px solid #7c5c36; color: #dfcaa7;
+    cursor: pointer; transition: all 0.1s ease;
+  }
+  .key-pill.active {
+    background: #205c31; border-color: #4cd973; color: #afffc4;
+    box-shadow: 0 0 10px rgba(76, 217, 115, 0.45);
+  }
+  .key-pill.warning {
+    background: #732318; border-color: #ff5240; color: #ffd6d1;
+    animation: pulse-warn 0.6s infinite alternate;
+  }
+  @keyframes pulse-warn {
+    from { opacity: 0.8; } to { opacity: 1; transform: scale(1.03); }
+  }
+
+  /* Center Alerts */
+  .center-alerts {
+    position: absolute; top: 22%; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    pointer-events: none;
+  }
+  .drop-notification {
+    background: rgba(142, 28, 17, 0.95);
+    border: 2px solid #ff7a66; border-radius: 8px;
+    padding: 10px 22px; color: #fff; font-size: 17px; font-weight: bold;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.8), 0 0 15px rgba(255, 75, 50, 0.5);
+    animation: notify-in 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    display: flex; align-items: center; gap: 10px;
+  }
+  @keyframes notify-in {
+    from { opacity: 0; transform: translateY(-20px) scale(0.9); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  /* Delivery Interactive Prompt */
+  .deliver-prompt {
+    position: absolute; bottom: 25%; left: 50%; transform: translateX(-50%);
+    background: rgba(22, 59, 32, 0.95); border: 3px solid #5ce684;
+    border-radius: 12px; padding: 14px 28px; text-align: center;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.9), 0 0 20px rgba(92, 230, 132, 0.5);
+    animation: pulse-deliver 1.2s infinite alternate;
+    pointer-events: auto; cursor: pointer;
+  }
+  .deliver-prompt h3 {
+    font-size: 22px; color: #b8ffd0; margin-bottom: 4px;
+  }
+  .deliver-prompt p {
+    font-size: 14px; color: #e3ffe9;
+  }
+  @keyframes pulse-deliver {
+    from { transform: translateX(-50%) scale(1); }
+    to { transform: translateX(-50%) scale(1.05); }
+  }
+
+  /* Controls Bar */
+  .controls-bar {
+    position: absolute; bottom: 12px; left: 16px;
+    background: rgba(20, 15, 10, 0.85); border: 1px solid #7c5e39;
+    border-radius: 6px; padding: 6px 14px; font-size: 12px; color: #d6be9a;
+    display: flex; gap: 16px; pointer-events: auto;
+  }
+  .controls-bar b { color: #ffe6b0; }
+
+  /* Utility Buttons */
+  .top-buttons {
+    position: absolute; right: 16px; top: 96px;
+    display: flex; flex-direction: column; gap: 8px; pointer-events: auto;
+  }
+  .icon-btn {
+    background: rgba(32, 24, 16, 0.92); border: 1.5px solid #a47d48;
+    color: #e6ceaa; border-radius: 6px; padding: 7px 12px;
+    font-size: 12px; font-weight: bold; cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .icon-btn:hover {
+    background: #4d3923; color: #fff; border-color: #ffd18b;
+  }
+
+  /* End Game Modals */
+  .modal-overlay {
+    position: absolute; inset: 0; background: rgba(8, 6, 4, 0.9);
+    display: flex; justify-content: center; align-items: center;
+    z-index: 100; backdrop-filter: blur(4px);
+  }
+  .modal-dialog {
+    background: #231911; border: 4px solid #b68b4c;
+    border-radius: 14px; padding: 32px 40px; max-width: 520px; width: 90%;
+    text-align: center; box-shadow: 0 15px 50px rgba(0,0,0,0.9), 0 0 30px rgba(182, 139, 76, 0.3);
+  }
+  .modal-dialog h2 {
+    font-size: 32px; margin-bottom: 12px; letter-spacing: 1px;
+  }
+  .modal-dialog.failure h2 { color: #ff6b57; }
+  .modal-dialog.success h2 { color: #62ea7a; }
+  .modal-desc {
+    font-size: 15px; line-height: 1.5; color: #dfcaa8; margin-bottom: 20px;
+  }
+  .modal-stats {
+    background: #17110b; border: 1px solid #5d4529; border-radius: 8px;
+    padding: 14px; margin-bottom: 24px; display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px; text-align: left;
+  }
+  .stat-item .lbl { font-size: 11px; text-transform: uppercase; color: #9c8365; }
+  .stat-item .val { font-size: 18px; font-weight: bold; color: #fff2db; margin-top: 2px; }
+  .play-again-btn {
+    background: linear-gradient(to bottom, #b8863f, #8b5a1f);
+    color: #fff9ea; border: 2px solid #ffd88a; border-radius: 8px;
+    padding: 13px 34px; font-size: 18px; font-weight: bold; font-family: inherit;
+    cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    transition: all 0.15s ease;
+  }
+  .play-again-btn:hover {
+    transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255, 204, 102, 0.4);
+    background: linear-gradient(to bottom, #d09c4d, #9f6925);
+  }
+
+  .click-to-lock-banner {
+    position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+    background: rgba(18, 14, 9, 0.85); border: 1px solid #947144;
+    padding: 6px 16px; border-radius: 6px; font-size: 12px; color: #eed5b0;
+    pointer-events: none; opacity: 0.9;
+  }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="world-canvas"></canvas>
+  <canvas id="tray-canvas"></canvas>
+
+  <div class="hud-layer">
+    <div class="top-hud">
+      <div class="compass-wrap">
+        <div class="compass-center-line"></div>
+        <div id="compass-tape" class="compass-tape"></div>
+        <div id="compass-waypoint" class="compass-waypoint-marker">
+          <span class="diamond">&#9670;</span>
+        </div>
+      </div>
+      <div class="waypoint-subtext">
+        <span class="badge">DESTINATION</span>
+        <span id="waypoint-label">Mrs. Vanderhoof (14th St) — 3.4 Blocks</span>
+      </div>
+    </div>
+
+    <div class="status-row">
+      <div class="status-card">
+        <div class="card-title">Muffin Delivery Dispatch</div>
+        <div class="card-value-large">
+          <span id="hud-muffin-count">12</span> <span style="font-size: 16px; color: #a48c6e;">/ 12</span>
+        </div>
+        <div class="card-sub">
+          Current Pay: <span id="hud-pay" class="pay-highlight">$1.50</span> <span style="color:#8a7458;">($0.125 / muffin)</span>
+        </div>
+      </div>
+
+      <div class="status-card stability-card">
+        <div class="card-title">Tray Balance & Stability</div>
+        <div class="gauge-track">
+          <div id="stability-fill" class="gauge-fill"></div>
+          <div class="gauge-marker" title="Drop Threshold 60%"></div>
+        </div>
+        <div class="card-sub" style="display:flex; justify-content:space-between;">
+          <span id="stability-text">Stability: 100%</span>
+          <span style="color:#d4a362; font-size:11px;">Drop Danger &lt; 60%</span>
+        </div>
+        <div class="grip-keys">
+          <div id="key-o-pill" class="key-pill active" onmousedown="setTouchGrip('o',true)" onmouseup="setTouchGrip('o',false)" ontouchstart="setTouchGrip('o',true)" ontouchend="setTouchGrip('o',false)">[ O ] Left Hand</div>
+          <div id="key-l-pill" class="key-pill active" onmousedown="setTouchGrip('l',true)" onmouseup="setTouchGrip('l',false)" ontouchstart="setTouchGrip('l',true)" ontouchend="setTouchGrip('l',false)">[ L ] Right Hand</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="center-alerts" class="center-alerts"></div>
+
+    <div id="deliver-prompt" class="deliver-prompt" style="display: none;" onclick="triggerDelivery()">
+      <h3>DELIVERY LOCATION REACHED!</h3>
+      <p>Press <b>[ E ]</b> or Click Here to Hand Over the Muffins</p>
+    </div>
+
+    <div class="controls-bar">
+      <span><b>Move:</b> W/A/S/D or Arrow Keys</span>
+      <span><b>Look:</b> Mouse Click or &#8592; / &#8594;</span>
+      <span><b>Balance Tray:</b> HOLD <b style="color:#72db6e;">[ O ]</b> + <b style="color:#72db6e;">[ L ]</b> Together</span>
+    </div>
+
+    <div class="top-buttons">
+      <button id="sound-btn" class="icon-btn" onclick="toggleAudio()">🔊 Audio: ON</button>
+      <button id="reset-btn" class="icon-btn" onclick="resetGame()">↺ Restart Route</button>
+    </div>
+
+    <div id="mouse-lock-tip" class="click-to-lock-banner">
+      Click screen for Smooth Mouse Look (ESC to unlock)
+    </div>
+  </div>
+
+  <div id="game-over-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-dialog failure">
+      <h2>GAME OVER</h2>
+      <p class="modal-desc">
+        You lost all 12 muffins in the cobblestone streets of New York!
+        The master baker at O'Malley's Bakery has docked your wages and terminated your route.
+      </p>
+      <div class="modal-stats">
+        <div class="stat-item">
+          <div class="lbl">Muffins Saved</div>
+          <div class="val" style="color: #ff6b57;">0 / 12</div>
+        </div>
+        <div class="stat-item">
+          <div class="lbl">Earned Pay</div>
+          <div class="val" style="color: #ff6b57;">$0.00</div>
+        </div>
+      </div>
+      <button class="play-again-btn" onclick="resetGame()">PLAY AGAIN</button>
+    </div>
+  </div>
+
+  <div id="victory-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-dialog success">
+      <h2>DELIVERY SUCCESSFUL!</h2>
+      <p class="modal-desc">
+        You delivered the muffins to Mrs. Vanderhoof's brownstone mansion at 247 Fifth Avenue!
+        She inspects the warm pastries with great delight.
+      </p>
+      <div class="modal-stats">
+        <div class="stat-item">
+          <div class="lbl">Muffins Delivered</div>
+          <div id="vic-muffins" class="val" style="color: #72db6e;">12 / 12</div>
+        </div>
+        <div class="stat-item">
+          <div class="lbl">Delivery Pay</div>
+          <div id="vic-pay" class="val pay-highlight">$1.50</div>
+        </div>
+        <div class="stat-item">
+          <div class="lbl">Customer Tip</div>
+          <div id="vic-tip" class="val" style="color: #ffd700;">+$0.50</div>
+        </div>
+        <div class="stat-item">
+          <div class="lbl">Final Earnings</div>
+          <div id="vic-total" class="val" style="color: #fff;">$2.00</div>
+        </div>
+      </div>
+      <button class="play-again-btn" onclick="resetGame()">DELIVER AGAIN</button>
+    </div>
+  </div>
+</div>
+
+<script>
+window.addEventListener('error', (e) => {
+  console.error("Game Runtime Error:", e.message, e.filename, e.lineno);
+  document.body.setAttribute('data-error', `${e.message} at ${e.lineno}`);
+});
+
+const INITIAL_MUFFINS = 12;
+const INITIAL_PAY = 1.50;
+const PAY_PER_MUFFIN = INITIAL_PAY / INITIAL_MUFFINS;
+const EYE_HEIGHT = 1.65;
+const WALK_SPEED = 3.2;
+const PEDESTRIAN_SPEED = 1.15;
+const BLOCK_LENGTH_METERS = 65.0;
+
+let gameState = {
+  running: true,
+  muffins: INITIAL_MUFFINS,
+  pay: INITIAL_PAY,
+  stability: 100.0,
+  unheldTimer: 0.0,
+  dropCooldown: 0.0,
+  hitCooldown: 0.0,
+  startTime: performance.now(),
+  lastFrameTime: performance.now(),
+  audioEnabled: true,
+  delivered: false,
+  fallingMuffins: []
+};
+
+let player = {
+  x: 0.0,
+  y: EYE_HEIGHT,
+  z: 6.0,
+  yaw: 0.0,
+  pitch: 0.0,
+  vx: 0.0,
+  vz: 0.0,
+  stepCycle: 0.0,
+  headBobY: 0.0,
+  headBobX: 0.0,
+  radius: 0.45
+};
+
+const DESTINATION = {
+  x: 9.8,
+  y: 0.0,
+  z: 228.0,
+  radius: 5.5,
+  name: "Mrs. Vanderhoof (14th St)"
+};
+
+const keys = {};
+let touchGrip = { o: false, l: false };
+let pointerLocked = false;
+
+function setTouchGrip(key, val) {
+  touchGrip[key] = val;
+}
+
+window.addEventListener('keydown', (e) => {
+  keys[e.key.toLowerCase()] = true;
+  keys[e.code] = true;
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) {
+    e.preventDefault();
+  }
+  if (e.key.toLowerCase() === 'e' || e.key === 'Enter') {
+    checkDeliveryInteract();
+  }
+});
+window.addEventListener('keyup', (e) => {
+  keys[e.key.toLowerCase()] = false;
+  keys[e.code] = false;
+});
+
+const worldCanvas = document.getElementById('world-canvas');
+const trayCanvas = document.getElementById('tray-canvas');
+
+worldCanvas.addEventListener('click', () => {
+  if (!pointerLocked && document.pointerLockElement !== worldCanvas) {
+    worldCanvas.requestPointerLock();
+  }
+});
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = (document.pointerLockElement === worldCanvas);
+  document.getElementById('mouse-lock-tip').style.display = pointerLocked ? 'none' : 'block';
+});
+document.addEventListener('mousemove', (e) => {
+  if (pointerLocked) {
+    const sensitivity = 0.0022;
+    player.yaw -= e.movementX * sensitivity;
+    player.pitch -= e.movementY * sensitivity;
+    player.pitch = Math.max(-0.6, Math.min(0.6, player.pitch));
+  }
+});
+
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) audioCtx = new AudioContext();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+window.addEventListener('click', initAudio, { once: true });
+window.addEventListener('keydown', initAudio, { once: true });
+
+function playSound(type) {
+  if (!gameState.audioEnabled || !audioCtx) return;
+  try {
+    const now = audioCtx.currentTime;
+    if (type === 'step') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(90 + Math.random() * 30, now);
+      osc.frequency.exponentialRampToValueAtTime(35, now + 0.07);
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.08);
+    } else if (type === 'drop') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(240, now);
+      osc.frequency.exponentialRampToValueAtTime(60, now + 0.22);
+      gain.gain.setValueAtTime(0.28, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.23);
+    } else if (type === 'wobble') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(140, now);
+      osc.frequency.linearRampToValueAtTime(110, now + 0.15);
+      gain.gain.setValueAtTime(0.05, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.16);
+    } else if (type === 'bell') {
+      [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+        gain.gain.setValueAtTime(0.2, now + idx * 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.8);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now + idx * 0.1);
+        osc.stop(now + idx * 0.1 + 0.85);
+      });
+    }
+  } catch (err) {}
+}
+
+function toggleAudio() {
+  gameState.audioEnabled = !gameState.audioEnabled;
+  document.getElementById('sound-btn').textContent = gameState.audioEnabled ? '🔊 Audio: ON' : '🔇 Audio: OFF';
+}
+
+function mat4Identity() {
+  return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+}
+function mat4Multiply(out, a, b) {
+  const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+  const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+  const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+  const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+
+  let b0  = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
+  out[0] = b0*
